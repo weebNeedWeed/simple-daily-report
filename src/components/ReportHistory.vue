@@ -135,6 +135,9 @@ const isToday = (dateStr) => {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    max-height: calc(100vh - 250px);
+    overflow-y: auto;
+    padding-right: 4px;
 }
 
 .empty-history {

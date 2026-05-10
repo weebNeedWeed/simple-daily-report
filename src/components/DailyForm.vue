@@ -34,6 +34,9 @@ const saveStatus = ref("saved"); // 'saved', 'saving', 'unsaved'
 // Trạng thái phóng to (Focus Mode)
 const zoomedSection = ref(null); // ID của section đang được phóng to
 
+// Trạng thái thu gọn (Collapse) - Mặc định thu gọn phần blockers
+const collapsedSections = ref(["blockers"]);
+
 // Thông báo (Toast)
 const toast = ref({ show: false, message: "", type: "success" });
 const showToast = (msg, type = "success") => {
@@ -128,7 +131,17 @@ const toggleZoom = (id) => {
         document.body.style.overflow = "";
     } else {
         zoomedSection.value = id;
-        document.body.style.overflow = "hidden"; // Ngăn cuộn trang chính khi đang focus
+        document.body.style.overflow = "hidden";
+    }
+};
+
+// Thu gọn / Mở rộng section
+const toggleCollapse = (id) => {
+    const index = collapsedSections.value.indexOf(id);
+    if (index === -1) {
+        collapsedSections.value.push(id);
+    } else {
+        collapsedSections.value.splice(index, 1);
     }
 };
 
@@ -350,13 +363,55 @@ onMounted(() => {
                 v-for="section in sections"
                 :key="section.id"
                 class="section"
-                :class="{ 'is-focused': zoomedSection === section.id }"
+                :class="{
+                    'is-focused': zoomedSection === section.id,
+                    'is-collapsed': collapsedSections.includes(section.id),
+                    'can-expand':
+                        !collapsedSections.includes(section.id) &&
+                        collapsedSections.length > 0,
+                }"
             >
                 <div class="section-meta">
-                    <label class="section-label">{{ section.label }}</label>
+                    <div
+                        class="label-group"
+                        @click="toggleCollapse(section.id)"
+                    >
+                        <span class="collapse-icon">
+                            <svg
+                                v-if="collapsedSections.includes(section.id)"
+                                xmlns="http://www.w3.org/2000/svg"
+                                width="16"
+                                height="16"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="3"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <path d="m9 18 6-6-6-6" />
+                            </svg>
+                            <svg
+                                v-else
+                                xmlns="http://www.w3.org/2000/svg"
+                                width="16"
+                                height="16"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="3"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <path d="m6 9 6 6 6-6" />
+                            </svg>
+                        </span>
+                        <label class="section-label">{{ section.label }}</label>
+                    </div>
                     <button
                         class="zoom-btn"
-                        @click="toggleZoom(section.id)"
+                        v-if="!collapsedSections.includes(section.id)"
+                        @click.stop="toggleZoom(section.id)"
                         :title="
                             zoomedSection === section.id
                                 ? 'Thu nhỏ'
@@ -395,14 +450,17 @@ onMounted(() => {
                         </svg>
                     </button>
                 </div>
-                <div class="input-container">
+
+                <div
+                    v-show="!collapsedSections.includes(section.id)"
+                    class="input-container"
+                >
                     <textarea
                         :ref="(el) => setRef(section.id, el)"
                         v-model="reportData[section.id]"
                         :placeholder="section.placeholder"
                         @keydown="handleKeydown(section.id, $event)"
                     ></textarea>
-                    <!-- Nút đóng nhanh trong chế độ phóng to -->
                     <button
                         v-if="zoomedSection === section.id"
                         class="close-focus-btn"
@@ -414,7 +472,6 @@ onMounted(() => {
             </div>
         </div>
 
-        <!-- Overlay mờ khi phóng to -->
         <div
             v-if="zoomedSection"
             class="focus-overlay"
@@ -534,7 +591,7 @@ onMounted(() => {
 .form-sections {
     display: flex;
     flex-direction: column;
-    gap: 32px;
+    gap: 24px;
 }
 .section {
     transition: var(--transition-fast);
@@ -544,14 +601,35 @@ onMounted(() => {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
 }
+
+.label-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 6px;
+    transition: var(--transition-fast);
+}
+.label-group:hover {
+    background-color: var(--bg-secondary);
+}
+
+.collapse-icon {
+    display: flex;
+    align-items: center;
+    color: var(--text-light);
+}
+
 .section-label {
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--text-medium);
+    pointer-events: none;
 }
 
 .zoom-btn {
@@ -588,6 +666,13 @@ textarea {
     min-height: 120px;
     font-size: 1.05rem;
     line-height: 1.6;
+    transition: min-height 0.3s ease;
+    padding-right: 8px;
+}
+
+/* Tự động dài ra khi có phần khác bị thu gọn */
+.section.can-expand textarea {
+    min-height: 200px;
 }
 
 /* Focus Mode Styles */
@@ -600,17 +685,18 @@ textarea {
     gap: 20px;
     animation: zoomIn 0.3s ease-out;
 }
-
 .section.is-focused .input-container {
     flex: 1;
     display: flex;
     flex-direction: column;
     padding: 30px;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.1);
+    background-color: #ffffff;
 }
 .section.is-focused textarea {
     flex: 1;
     font-size: 1.2rem;
+    min-height: unset !important;
 }
 .section.is-focused .section-label {
     font-size: 1.5rem;
