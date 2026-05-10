@@ -37,13 +37,11 @@ const zoomedSection = ref(null); // ID của section đang được phóng to
 // Trạng thái thu gọn (Collapse) - Mặc định thu gọn phần blockers
 const collapsedSections = ref(["blockers"]);
 
-// Thông báo (Toast)
-const toast = ref({ show: false, message: "", type: "success" });
-const showToast = (msg, type = "success") => {
-    toast.value = { show: true, message: msg, type };
-    setTimeout(() => {
-        toast.value.show = false;
-    }, 3000);
+// Thông báo (Dispatch global toast)
+const showToast = (message, type = "success") => {
+    window.dispatchEvent(
+        new CustomEvent("show-toast", { detail: { message, type } }),
+    );
 };
 
 // Xử lý hiển thị ngày tháng
@@ -316,12 +314,6 @@ onMounted(() => {
 
 <template>
     <div class="daily-form">
-        <Transition name="fade">
-            <div v-if="toast.show" class="toast" :class="toast.type">
-                {{ toast.message }}
-            </div>
-        </Transition>
-
         <header class="form-header">
             <div class="header-top">
                 <div class="header-main">
@@ -500,36 +492,6 @@ onMounted(() => {
     flex-direction: column;
     gap: 40px;
     position: relative;
-}
-
-.toast {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    padding: 12px 24px;
-    border-radius: 8px;
-    color: white;
-    font-weight: 600;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    z-index: 3000;
-}
-.toast.success {
-    background-color: #4caf50;
-}
-.toast.error {
-    background-color: #f44336;
-}
-
-.fade-enter-active,
-.fade-leave-active {
-    transition:
-        opacity 0.3s,
-        transform 0.3s;
-}
-.fade-enter-from,
-.fade-leave-to {
-    opacity: 0;
-    transform: translateY(-20px);
 }
 
 .form-header {
