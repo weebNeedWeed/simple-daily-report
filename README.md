@@ -1,4 +1,4 @@
-# Daily Report App
+# Simple Daily Report App
 
 [![Vue 3](https://img.shields.io/badge/Vue.js-3.x-4fc08d.svg)](https://vuejs.org/)
 [![Vite](https://img.shields.io/badge/Vite-Latest-646cff.svg)](https://vitejs.dev/)
