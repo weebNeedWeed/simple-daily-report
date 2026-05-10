@@ -159,11 +159,11 @@ const copyFullReport = () => {
 };
 
 const copyCompletedOnly = () => {
-    const content = `* VIỆC ĐÃ HOÀN THÀNH (${displayDate.value}):\n${reportData.value.completed || "(Trống)"}`;
+    const content = reportData.value.completed || "(Trống)";
     navigator.clipboard
         .writeText(content)
         .then(() => {
-            showToast("Đã sao chép việc đã hoàn thành!");
+            showToast("Đã sao chép nội dung!");
         })
         .catch(() => {
             showToast("Không thể sao chép!", "error");
