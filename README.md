@@ -45,7 +45,7 @@ Reporting shouldn't be a chore. This app follows the **Minimalism** principle: r
 ## 🚀 Getting Started
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) (Version 16.x or higher)
+- [Node.js](https://nodejs.org/) (Version 20.19.0+ or 22.12.0+)
 - [npm](https://www.npmjs.com/) or [yarn](https://yarnpkg.com/)
 
 ### Installation

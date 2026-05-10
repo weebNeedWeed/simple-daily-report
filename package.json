@@ -1,6 +1,9 @@
 {
-  "name": "helloworld",
+  "name": "simple-daily-report",
   "version": "0.0.0",
+  "description": "A professional, minimalist productivity application designed to streamline the daily work reporting workflow.",
+  "keywords": ["daily-report", "vue3", "productivity", "minimalism"],
+  "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {
