@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted } from "vue";
 import ReportHistory from "./components/ReportHistory.vue";
 import DailyForm from "./components/DailyForm.vue";
+import AppLauncher from "./components/AppLauncher.vue";
 
 // Lấy ngày hiện tại làm mặc định (YYYY-MM-DD)
 const getTodayKey = () => {
@@ -29,12 +30,18 @@ const handleGlobalToast = (e) => {
     showToast(message, type);
 };
 
+const handleGlobalChangeDate = (e) => {
+    handleSelectDate(e.detail);
+};
+
 onMounted(() => {
     window.addEventListener("show-toast", handleGlobalToast);
+    window.addEventListener("change-date", handleGlobalChangeDate);
 });
 
 onUnmounted(() => {
     window.removeEventListener("show-toast", handleGlobalToast);
+    window.removeEventListener("change-date", handleGlobalChangeDate);
 });
 </script>
 
@@ -59,6 +66,8 @@ onUnmounted(() => {
                 <DailyForm :selected-date="selectedDate" />
             </main>
         </div>
+
+        <AppLauncher />
     </div>
 </template>
 

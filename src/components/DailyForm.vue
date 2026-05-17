@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, defineProps, watch, computed } from "vue";
+import { ref, onMounted, onUnmounted, defineProps, watch, computed } from "vue";
 
 const props = defineProps(["selectedDate"]);
 
@@ -8,6 +8,11 @@ const sections = [
         id: "completed",
         label: "Việc đã hoàn thành",
         placeholder: "Những công việc bạn đã hoàn thành trong hôm nay...",
+    },
+    {
+        id: "notes",
+        label: "Ghi chú",
+        placeholder: "",
     },
     {
         id: "next",
@@ -24,9 +29,35 @@ const sections = [
 // Trạng thái dữ liệu báo cáo
 const reportData = ref({
     completed: "",
+    notes: [],
     next: "",
     blockers: "",
 });
+
+const addNote = () => {
+    reportData.value.notes.push({
+        id: Date.now(),
+        title: "Ghi chú mới",
+        content: "",
+    });
+};
+
+const showDeleteNoteModal = ref(false);
+const noteToDeleteIndex = ref(null);
+
+const removeNote = (index) => {
+    noteToDeleteIndex.value = index;
+    showDeleteNoteModal.value = true;
+};
+
+const executeRemoveNote = () => {
+    if (noteToDeleteIndex.value !== null) {
+        reportData.value.notes.splice(noteToDeleteIndex.value, 1);
+        showDeleteNoteModal.value = false;
+        noteToDeleteIndex.value = null;
+        showToast("Đã xóa ghi chú con!");
+    }
+};
 
 // Trạng thái lưu
 const saveStatus = ref("saved"); // 'saved', 'saving', 'unsaved'
@@ -34,8 +65,46 @@ const saveStatus = ref("saved"); // 'saved', 'saving', 'unsaved'
 // Trạng thái phóng to (Focus Mode)
 const zoomedSection = ref(null); // ID của section đang được phóng to
 
-// Trạng thái thu gọn (Collapse) - Mặc định thu gọn phần blockers
-const collapsedSections = ref(["blockers"]);
+// Trạng thái thu gọn (Collapse) - Mặc định thu gọn phần next và blockers
+const collapsedSections = ref(["next", "blockers"]);
+
+let isDeleting = false;
+const showConfirmModal = ref(false);
+
+const confirmDelete = () => {
+    showConfirmModal.value = true;
+};
+
+const executeDelete = () => {
+    showConfirmModal.value = false;
+    const dateKey = props.selectedDate;
+
+    localStorage.removeItem(`dr_data_${dateKey}`);
+
+    let history = JSON.parse(localStorage.getItem("dr_history") || "[]");
+    history = history.filter((d) => d !== dateKey);
+    localStorage.setItem("dr_history", JSON.stringify(history));
+
+    window.dispatchEvent(new CustomEvent("report-saved"));
+
+    isDeleting = true;
+    reportData.value = { completed: "", notes: [], next: "", blockers: "" };
+    saveStatus.value = "saved";
+
+    setTimeout(() => {
+        isDeleting = false;
+    }, 100);
+
+    showToast("Đã xóa báo cáo!");
+
+    const today = new Date();
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    if (dateKey !== todayKey) {
+        window.dispatchEvent(
+            new CustomEvent("change-date", { detail: todayKey }),
+        );
+    }
+};
 
 // Thông báo (Dispatch global toast)
 const showToast = (message, type = "success") => {
@@ -71,11 +140,14 @@ const setRef = (id, el) => {
 // Tải dữ liệu
 const loadReport = (dateKey) => {
     if (!dateKey) return;
-    reportData.value = { completed: "", next: "", blockers: "" };
+    reportData.value = { completed: "", notes: [], next: "", blockers: "" };
     const saved = localStorage.getItem(`dr_data_${dateKey}`);
     if (saved) {
         try {
             reportData.value = JSON.parse(saved);
+            if (!reportData.value.notes) {
+                reportData.value.notes = [];
+            }
             saveStatus.value = "saved";
         } catch (e) {
             console.error("Lỗi khi tải dữ liệu:", e);
@@ -123,13 +195,21 @@ const triggerAutoSave = () => {
 };
 
 // Phóng to / Thu nhỏ section
+let scrollPosition = 0;
+
 const toggleZoom = (id) => {
     if (zoomedSection.value === id) {
         zoomedSection.value = null;
         document.body.style.overflow = "";
+        document.body.style.minHeight = "";
+        setTimeout(() => {
+            window.scrollTo(0, scrollPosition);
+        }, 0);
     } else {
-        zoomedSection.value = id;
+        scrollPosition = window.scrollY;
+        document.body.style.minHeight = `${document.documentElement.scrollHeight}px`;
         document.body.style.overflow = "hidden";
+        zoomedSection.value = id;
     }
 };
 
@@ -144,24 +224,39 @@ const toggleCollapse = (id) => {
 };
 
 // Sao chép báo cáo
-const copyFullReport = () => {
-    const content = `[BÁO CÁO NGÀY ${displayDate.value}]\n\n* VIỆC ĐÃ HOÀN THÀNH:\n${reportData.value.completed || "(Trống)"}\n\n* KẾ HOẠCH TIẾP THEO:\n${reportData.value.next || "(Trống)"}\n\n* KHÓ KHĂN (BLOCKERS):\n${reportData.value.blockers || "(Trống)"}`;
+const copySection = (id, label) => {
+    let content = "";
+    if (id === "notes") {
+        const notes = reportData.value.notes || [];
+        if (notes.length === 0) {
+            content = "(Trống)";
+        } else {
+            content = notes
+                .map((note) => `[${note.title}]\n${note.content || ""}`)
+                .join("\n\n");
+        }
+    } else {
+        content = reportData.value[id] || "(Trống)";
+    }
+
     navigator.clipboard
         .writeText(content)
         .then(() => {
-            showToast("Đã sao chép toàn bộ báo cáo!");
+            showToast(`Đã sao chép "${label}"!`);
         })
         .catch(() => {
             showToast("Không thể sao chép!", "error");
         });
 };
 
-const copyCompletedOnly = () => {
-    const content = reportData.value.completed || "(Trống)";
+const copySubNote = (index) => {
+    const note = reportData.value.notes[index];
+    if (!note) return;
+    const content = `[${note.title}]\n${note.content || ""}`;
     navigator.clipboard
         .writeText(content)
         .then(() => {
-            showToast("Đã sao chép nội dung!");
+            showToast(`Đã sao chép "${note.title}"!`);
         })
         .catch(() => {
             showToast("Không thể sao chép!", "error");
@@ -169,12 +264,25 @@ const copyCompletedOnly = () => {
 };
 
 // Xử lý thụt lề
-const adjustIndent = (id, amount) => {
-    const el = textareaRefs[id];
+const adjustIndent = (id, amount, noteIndex = null) => {
+    const refId = noteIndex !== null ? `notes_${noteIndex}` : id;
+    const el = textareaRefs[refId];
     if (!el) return;
     const start = el.selectionStart;
     const end = el.selectionEnd;
-    const value = reportData.value[id];
+    const value =
+        noteIndex !== null
+            ? reportData.value.notes[noteIndex].content
+            : reportData.value[id];
+
+    const updateValue = (newValue) => {
+        if (noteIndex !== null) {
+            reportData.value.notes[noteIndex].content = newValue;
+        } else {
+            reportData.value[id] = newValue;
+        }
+    };
+
     const beforeStart = value.substring(0, start);
     const lastNewLine = beforeStart.lastIndexOf("\n");
     const lineStart = lastNewLine === -1 ? 0 : lastNewLine + 1;
@@ -210,10 +318,11 @@ const adjustIndent = (id, amount) => {
         if (nextLevel !== currentLevel) {
             const newPrefix = `${levels[nextLevel].indent}${levels[nextLevel].marker} `;
             const diff = newPrefix.length - currentMatch.length;
-            reportData.value[id] =
+            updateValue(
                 value.substring(0, lineStart) +
-                newPrefix +
-                afterLineStart.substring(currentMatch.length);
+                    newPrefix +
+                    afterLineStart.substring(currentMatch.length),
+            );
             setTimeout(() => {
                 el.selectionStart = start + diff;
                 el.selectionEnd = end + diff;
@@ -225,8 +334,9 @@ const adjustIndent = (id, amount) => {
     }
 
     if (amount > 0) {
-        reportData.value[id] =
-            value.substring(0, lineStart) + "  " + value.substring(lineStart);
+        updateValue(
+            value.substring(0, lineStart) + "  " + value.substring(lineStart),
+        );
         setTimeout(() => {
             el.selectionStart = start + 2;
             el.selectionEnd = end + 2;
@@ -239,9 +349,10 @@ const adjustIndent = (id, amount) => {
         if (lineContent.startsWith("  ")) toRemove = 2;
         else if (lineContent.startsWith(" ")) toRemove = 1;
         if (toRemove > 0) {
-            reportData.value[id] =
+            updateValue(
                 value.substring(0, lineStart) +
-                value.substring(lineStart + toRemove);
+                    value.substring(lineStart + toRemove),
+            );
             setTimeout(() => {
                 el.selectionStart = Math.max(lineStart, start - toRemove);
                 el.selectionEnd = Math.max(lineStart, end - toRemove);
@@ -253,12 +364,78 @@ const adjustIndent = (id, amount) => {
 };
 
 // Xử lý phím tắt
-const handleKeydown = (id, e) => {
-    if (e.key === "Enter") {
-        const el = textareaRefs[id];
-        if (!el) return;
+const handleKeydown = (id, e, noteIndex = null) => {
+    const refId = noteIndex !== null ? `notes_${noteIndex}` : id;
+    const el = textareaRefs[refId];
+    if (!el) return;
+    const value =
+        noteIndex !== null
+            ? reportData.value.notes[noteIndex].content
+            : reportData.value[id];
+
+    const updateValue = (newValue) => {
+        if (noteIndex !== null) {
+            reportData.value.notes[noteIndex].content = newValue;
+        } else {
+            reportData.value[id] = newValue;
+        }
+    };
+
+    const pairs = { "(": ")", "[": "]", "{": "}", '"': '"', "'": "'" };
+    const closingChars = {
+        ")": true,
+        "]": true,
+        "}": true,
+        '"': true,
+        "'": true,
+    };
+
+    if (closingChars[e.key]) {
         const start = el.selectionStart;
-        const value = reportData.value[id];
+        if (value.substring(start, start + 1) === e.key) {
+            e.preventDefault();
+            el.selectionStart = el.selectionEnd = start + 1;
+            return;
+        }
+    }
+
+    if (pairs[e.key]) {
+        e.preventDefault();
+        const start = el.selectionStart;
+        const end = el.selectionEnd;
+        const closing = pairs[e.key];
+
+        if (start !== end) {
+            const selectedText = value.substring(start, end);
+            updateValue(
+                value.substring(0, start) +
+                    e.key +
+                    selectedText +
+                    closing +
+                    value.substring(end),
+            );
+            setTimeout(() => {
+                el.selectionStart = start + 1;
+                el.selectionEnd = end + 1;
+                triggerAutoSave();
+            }, 0);
+        } else {
+            updateValue(
+                value.substring(0, start) +
+                    e.key +
+                    closing +
+                    value.substring(start),
+            );
+            setTimeout(() => {
+                el.selectionStart = el.selectionEnd = start + 1;
+                triggerAutoSave();
+            }, 0);
+        }
+        return;
+    }
+
+    if (e.key === "Enter") {
+        const start = el.selectionStart;
         const beforeStart = value.substring(0, start);
         const lastNewLine = beforeStart.lastIndexOf("\n");
         const currentLine = beforeStart.substring(lastNewLine + 1);
@@ -266,21 +443,8 @@ const handleKeydown = (id, e) => {
         if (match) {
             e.preventDefault();
             const prefix = match[1];
-            if (currentLine === prefix) {
-                reportData.value[id] =
-                    value.substring(
-                        0,
-                        lastNewLine + (lastNewLine === -1 ? 0 : 1),
-                    ) + value.substring(start);
-                setTimeout(() => {
-                    el.selectionStart = el.selectionEnd =
-                        lastNewLine + (lastNewLine === -1 ? 0 : 1);
-                    triggerAutoSave();
-                }, 0);
-                return;
-            }
             const afterStart = value.substring(start);
-            reportData.value[id] = beforeStart + "\n" + prefix + afterStart;
+            updateValue(beforeStart + "\n" + prefix + afterStart);
             setTimeout(() => {
                 el.selectionStart = el.selectionEnd = start + 1 + prefix.length;
                 triggerAutoSave();
@@ -288,14 +452,14 @@ const handleKeydown = (id, e) => {
         }
     } else if (e.key === "Tab") {
         e.preventDefault();
-        adjustIndent(id, e.shiftKey ? -1 : 1);
+        adjustIndent(id, e.shiftKey ? -1 : 1, noteIndex);
     }
 };
 
 watch(
     reportData,
     () => {
-        if (saveStatus.value !== "saving") triggerAutoSave();
+        if (!isDeleting && saveStatus.value !== "saving") triggerAutoSave();
     },
     { deep: true },
 );
@@ -307,8 +471,17 @@ watch(
     { immediate: true },
 );
 
+const handleDataImported = () => {
+    loadReport(props.selectedDate);
+};
+
 onMounted(() => {
     loadReport(props.selectedDate);
+    window.addEventListener("data-imported", handleDataImported);
+});
+
+onUnmounted(() => {
+    window.removeEventListener("data-imported", handleDataImported);
 });
 </script>
 
@@ -400,59 +573,254 @@ onMounted(() => {
                         </span>
                         <label class="section-label">{{ section.label }}</label>
                     </div>
-                    <button
-                        class="zoom-btn"
+                    <div
+                        class="section-actions"
                         v-if="!collapsedSections.includes(section.id)"
-                        @click.stop="toggleZoom(section.id)"
-                        :title="
-                            zoomedSection === section.id
-                                ? 'Thu nhỏ'
-                                : 'Phóng to'
-                        "
                     >
-                        <svg
-                            v-if="zoomedSection !== section.id"
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="18"
-                            height="18"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
+                        <button
+                            class="icon-action-btn"
+                            @click.stop="copySection(section.id, section.label)"
+                            title="Sao chép nội dung phần này"
                         >
-                            <path d="m15 3 6 6-6 6M9 21l-6-6 6-6" />
-                        </svg>
-                        <svg
-                            v-else
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="18"
-                            height="18"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
+                            <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                width="16"
+                                height="16"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <rect
+                                    width="14"
+                                    height="14"
+                                    x="8"
+                                    y="8"
+                                    rx="2"
+                                    ry="2"
+                                />
+                                <path
+                                    d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
+                                />
+                            </svg>
+                        </button>
+                        <button
+                            class="icon-action-btn"
+                            @click.stop="toggleZoom(section.id)"
+                            :title="
+                                zoomedSection === section.id
+                                    ? 'Thu nhỏ'
+                                    : 'Phóng to'
+                            "
                         >
-                            <path
-                                d="m21 21-6-6m6 0v6m0-6h-6M3 3l6 6M3 9V3m0 0h6"
-                            />
-                        </svg>
-                    </button>
+                            <svg
+                                v-if="zoomedSection !== section.id"
+                                xmlns="http://www.w3.org/2000/svg"
+                                width="18"
+                                height="18"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <path d="m15 3 6 6-6 6M9 21l-6-6 6-6" />
+                            </svg>
+                            <svg
+                                v-else
+                                xmlns="http://www.w3.org/2000/svg"
+                                width="18"
+                                height="18"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <path
+                                    d="m21 21-6-6m6 0v6m0-6h-6M3 3l6 6M3 9V3m0 0h6"
+                                />
+                            </svg>
+                        </button>
+                    </div>
                 </div>
 
                 <div
                     v-show="!collapsedSections.includes(section.id)"
                     class="input-container"
                 >
-                    <textarea
-                        :ref="(el) => setRef(section.id, el)"
-                        v-model="reportData[section.id]"
-                        :placeholder="section.placeholder"
-                        @keydown="handleKeydown(section.id, $event)"
-                    ></textarea>
+                    <template v-if="section.id !== 'notes'">
+                        <textarea
+                            :ref="(el) => setRef(section.id, el)"
+                            v-model="reportData[section.id]"
+                            :placeholder="section.placeholder"
+                            @keydown="handleKeydown(section.id, $event)"
+                        ></textarea>
+                    </template>
+                    <template v-else>
+                        <div class="notes-container">
+                            <div
+                                v-for="(note, index) in reportData.notes"
+                                :key="note.id"
+                                class="sub-note-block"
+                                :class="{
+                                    'is-focused':
+                                        zoomedSection === `notes_${index}`,
+                                }"
+                            >
+                                <div class="sub-note-header">
+                                    <input
+                                        type="text"
+                                        v-model="note.title"
+                                        class="sub-note-title"
+                                        placeholder="Tiêu đề ghi chú..."
+                                    />
+                                    <div class="sub-note-actions">
+                                        <button
+                                            class="icon-action-btn"
+                                            @click.stop="copySubNote(index)"
+                                            title="Sao chép ghi chú này"
+                                        >
+                                            <svg
+                                                xmlns="http://www.w3.org/2000/svg"
+                                                width="16"
+                                                height="16"
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="2"
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                            >
+                                                <rect
+                                                    width="14"
+                                                    height="14"
+                                                    x="8"
+                                                    y="8"
+                                                    rx="2"
+                                                    ry="2"
+                                                />
+                                                <path
+                                                    d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
+                                                />
+                                            </svg>
+                                        </button>
+                                        <button
+                                            class="icon-action-btn"
+                                            @click.stop="
+                                                toggleZoom(`notes_${index}`)
+                                            "
+                                            :title="
+                                                zoomedSection ===
+                                                `notes_${index}`
+                                                    ? 'Thu nhỏ'
+                                                    : 'Phóng to'
+                                            "
+                                        >
+                                            <svg
+                                                v-if="
+                                                    zoomedSection !==
+                                                    `notes_${index}`
+                                                "
+                                                xmlns="http://www.w3.org/2000/svg"
+                                                width="18"
+                                                height="18"
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="2"
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                            >
+                                                <path
+                                                    d="m15 3 6 6-6 6M9 21l-6-6 6-6"
+                                                />
+                                            </svg>
+                                            <svg
+                                                v-else
+                                                xmlns="http://www.w3.org/2000/svg"
+                                                width="18"
+                                                height="18"
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="2"
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                            >
+                                                <path
+                                                    d="m21 21-6-6m6 0v6m0-6h-6M3 3l6 6M3 9V3m0 0h6"
+                                                />
+                                            </svg>
+                                        </button>
+                                        <button
+                                            class="icon-action-btn delete-note-btn"
+                                            @click="removeNote(index)"
+                                            title="Xóa ghi chú này"
+                                        >
+                                            <svg
+                                                xmlns="http://www.w3.org/2000/svg"
+                                                width="16"
+                                                height="16"
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                stroke-width="2"
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                            >
+                                                <path d="M3 6h18" />
+                                                <path
+                                                    d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"
+                                                />
+                                                <path
+                                                    d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"
+                                                />
+                                                <line
+                                                    x1="10"
+                                                    x2="10"
+                                                    y1="11"
+                                                    y2="17"
+                                                />
+                                                <line
+                                                    x1="14"
+                                                    x2="14"
+                                                    y1="11"
+                                                    y2="17"
+                                                />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+                                <textarea
+                                    :ref="(el) => setRef(`notes_${index}`, el)"
+                                    v-model="note.content"
+                                    placeholder="Nội dung ghi chú..."
+                                    @keydown="
+                                        handleKeydown('notes', $event, index)
+                                    "
+                                ></textarea>
+                                <button
+                                    v-if="zoomedSection === `notes_${index}`"
+                                    class="close-focus-btn"
+                                    @click="toggleZoom(`notes_${index}`)"
+                                >
+                                    Hoàn tất
+                                </button>
+                            </div>
+                            <button
+                                class="btn-outline add-note-btn"
+                                @click="addNote"
+                            >
+                                + Thêm Ghi Chú
+                            </button>
+                        </div>
+                    </template>
+
                     <button
                         v-if="zoomedSection === section.id"
                         class="close-focus-btn"
@@ -471,18 +839,120 @@ onMounted(() => {
         ></div>
 
         <footer class="form-footer">
-            <div class="copy-options">
-                <button class="btn-outline" @click="copyCompletedOnly">
-                    Sao chép việc đã xong
-                </button>
-                <button class="btn-outline" @click="copyFullReport">
-                    Sao chép toàn bộ
-                </button>
-            </div>
+            <button
+                class="btn-danger-outline"
+                @click="confirmDelete"
+                title="Xóa báo cáo"
+            >
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                >
+                    <path d="M3 6h18" />
+                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                    <line x1="10" x2="10" y1="11" y2="17" />
+                    <line x1="14" x2="14" y1="11" y2="17" />
+                </svg>
+            </button>
             <button class="btn-primary" @click="saveReport">
                 Cập nhật báo cáo
             </button>
         </footer>
+
+        <!-- Custom Confirm Modal -->
+        <Teleport to="body">
+            <div v-if="showConfirmModal" class="modal-overlay">
+                <div class="modal-content">
+                    <div class="modal-icon">
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="32"
+                            height="32"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <path
+                                d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"
+                            />
+                            <line x1="12" x2="12" y1="9" y2="13" />
+                            <line x1="12" x2="12.01" y1="17" y2="17" />
+                        </svg>
+                    </div>
+                    <h3>Xác nhận xóa</h3>
+                    <p>
+                        Bạn có chắc chắn muốn xóa báo cáo của ngày
+                        <strong>{{ displayDate }}</strong> không? Thao tác này
+                        không thể hoàn tác.
+                    </p>
+                    <div class="modal-actions">
+                        <button
+                            class="btn-outline"
+                            @click="showConfirmModal = false"
+                        >
+                            Hủy
+                        </button>
+                        <button class="btn-danger" @click="executeDelete">
+                            Xóa báo cáo
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
+
+        <!-- Custom Confirm Modal cho Ghi chú con -->
+        <Teleport to="body">
+            <div v-if="showDeleteNoteModal" class="modal-overlay">
+                <div class="modal-content">
+                    <div class="modal-icon">
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="32"
+                            height="32"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <path
+                                d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"
+                            />
+                            <line x1="12" x2="12" y1="9" y2="13" />
+                            <line x1="12" x2="12.01" y1="17" y2="17" />
+                        </svg>
+                    </div>
+                    <h3>Xác nhận xóa ghi chú</h3>
+                    <p>
+                        Bạn có chắc chắn muốn xóa ghi chú này không? Thao tác
+                        này không thể hoàn tác.
+                    </p>
+                    <div class="modal-actions">
+                        <button
+                            class="btn-outline"
+                            @click="showDeleteNoteModal = false"
+                        >
+                            Hủy
+                        </button>
+                        <button class="btn-danger" @click="executeRemoveNote">
+                            Xóa ghi chú
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
     </div>
 </template>
 
@@ -594,7 +1064,12 @@ onMounted(() => {
     pointer-events: none;
 }
 
-.zoom-btn {
+.section-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.icon-action-btn {
     background: transparent;
     color: var(--text-light);
     opacity: 0.5;
@@ -604,7 +1079,7 @@ onMounted(() => {
     align-items: center;
     justify-content: center;
 }
-.zoom-btn:hover {
+.icon-action-btn:hover {
     opacity: 1;
     color: var(--color-primary);
     background: var(--bg-secondary);
@@ -621,6 +1096,91 @@ onMounted(() => {
 .input-container:focus-within {
     background-color: #ffffff;
     border-color: var(--color-primary);
+}
+
+.notes-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.sub-note-block {
+    background-color: #fff;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.sub-note-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--bg-secondary);
+    padding-bottom: 8px;
+}
+
+.sub-note-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.sub-note-block.is-focused {
+    position: fixed;
+    inset: 40px;
+    z-index: 2200;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 30px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.1);
+    background-color: #ffffff;
+    animation: zoomIn 0.3s ease-out;
+}
+.sub-note-block.is-focused textarea {
+    flex: 1;
+    font-size: 1.2rem;
+    min-height: unset !important;
+}
+.sub-note-block.is-focused .sub-note-title {
+    font-size: 1.5rem;
+    color: var(--color-primary);
+}
+
+.sub-note-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-dark);
+    background: transparent;
+    border: none;
+    outline: none;
+    width: 100%;
+}
+
+.delete-note-btn {
+    color: var(--text-light);
+}
+
+.delete-note-btn:hover {
+    color: #f44336;
+    background: rgba(244, 67, 54, 0.1);
+}
+
+.add-note-btn {
+    border: 1px dashed var(--color-primary);
+    color: var(--color-primary);
+    padding: 10px;
+    border-radius: 8px;
+    background: transparent;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+.add-note-btn:hover {
+    background: var(--bg-secondary);
 }
 
 textarea {
@@ -655,11 +1215,23 @@ textarea {
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.1);
     background-color: #ffffff;
 }
-.section.is-focused textarea {
+.section.is-focused .input-container > textarea {
     flex: 1;
     font-size: 1.2rem;
     min-height: unset !important;
 }
+
+.section.is-focused .notes-container {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 8px;
+}
+
+.section.is-focused .sub-note-block textarea {
+    min-height: 250px;
+    font-size: 1.15rem;
+}
+
 .section.is-focused .section-label {
     font-size: 1.5rem;
     color: var(--color-primary);
@@ -711,10 +1283,6 @@ textarea {
     gap: 16px;
     padding-top: 16px;
 }
-.copy-options {
-    display: flex;
-    gap: 12px;
-}
 .form-footer button {
     height: 46px;
     display: flex;
@@ -737,8 +1305,7 @@ textarea {
         align-items: flex-start;
         gap: 8px;
     }
-    .form-footer,
-    .copy-options {
+    .form-footer {
         flex-direction: column;
         width: 100%;
         align-items: stretch;
@@ -750,5 +1317,80 @@ textarea {
         inset: 10px;
         padding: 10px;
     }
+}
+
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(2px);
+    z-index: 3000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content {
+    background-color: #ffffff;
+    border-radius: 12px;
+    padding: 30px;
+    max-width: 400px;
+    width: 90%;
+    text-align: center;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+.modal-icon {
+    color: #f44336;
+    margin-bottom: 16px;
+    display: flex;
+    justify-content: center;
+}
+
+.modal-content h3 {
+    margin-bottom: 12px;
+    font-size: 1.2rem;
+}
+
+.modal-content p {
+    color: var(--text-medium);
+    font-size: 0.95rem;
+    margin-bottom: 24px;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+}
+
+.btn-danger-outline {
+    background-color: transparent;
+    color: #f44336;
+    border: 1.5px solid #f44336;
+    padding: 10px 14px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition-fast);
+}
+
+.btn-danger-outline:hover {
+    background-color: rgba(244, 67, 54, 0.1);
+}
+
+.btn-danger {
+    background-color: #f44336;
+    color: white;
+    padding: 10px 22px;
+    font-weight: 600;
+    border-radius: 8px;
+    transition: var(--transition-fast);
+}
+
+.btn-danger:hover {
+    filter: brightness(1.1);
 }
 </style>
