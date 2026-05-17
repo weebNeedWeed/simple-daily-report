@@ -540,10 +540,7 @@ onUnmounted(() => {
                 class="section"
                 :class="{
                     'is-focused': zoomedSection === section.id,
-                    'is-collapsed': collapsedSections.includes(section.id),
-                    'can-expand':
-                        !collapsedSections.includes(section.id) &&
-                        collapsedSections.length > 0,
+                    'is-collapsed': collapsedSections.includes(section.id)
                 }"
             >
                 <div class="section-meta">
@@ -1195,16 +1192,11 @@ onUnmounted(() => {
 
 textarea {
     width: 100%;
-    min-height: 120px;
+    min-height: 200px;
     font-size: 1.05rem;
     line-height: 1.6;
     transition: min-height 0.3s ease;
     padding-right: 8px;
-}
-
-/* Tự động dài ra khi có phần khác bị thu gọn */
-.section.can-expand textarea {
-    min-height: 200px;
 }
 
 /* Focus Mode Styles */
