@@ -52,6 +52,11 @@ const removeNote = (index) => {
 
 const executeRemoveNote = () => {
     if (noteToDeleteIndex.value !== null) {
+        if (zoomedSection.value === `notes_${noteToDeleteIndex.value}`) {
+            zoomedSection.value = null;
+            document.body.style.overflow = "";
+            document.body.style.minHeight = "";
+        }
         reportData.value.notes.splice(noteToDeleteIndex.value, 1);
         showDeleteNoteModal.value = false;
         noteToDeleteIndex.value = null;
@@ -466,6 +471,11 @@ watch(
 watch(
     () => props.selectedDate,
     (newDate) => {
+        if (zoomedSection.value !== null) {
+            zoomedSection.value = null;
+            document.body.style.overflow = "";
+            document.body.style.minHeight = "";
+        }
         loadReport(newDate);
     },
     { immediate: true },
