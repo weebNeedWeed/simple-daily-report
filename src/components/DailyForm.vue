@@ -404,6 +404,24 @@ const handleKeydown = (id, e, noteIndex = null) => {
         }
     }
 
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "w") {
+        e.preventDefault();
+        const start = el.selectionStart;
+        const textBefore = value.substring(0, start);
+        const match = textBefore.match(/(\s*\S+|\s+)$/);
+        if (match) {
+            const deleteLength = match[0].length;
+            const newTextBefore = textBefore.substring(0, start - deleteLength);
+            updateValue(newTextBefore + value.substring(start));
+
+            setTimeout(() => {
+                el.selectionStart = el.selectionEnd = newTextBefore.length;
+                triggerAutoSave();
+            }, 0);
+        }
+        return;
+    }
+
     if (pairs[e.key]) {
         e.preventDefault();
         const start = el.selectionStart;
